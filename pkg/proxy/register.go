@@ -57,6 +57,7 @@ func (p *Register) Add(route *Route) error {
 		}
 	}
 
+	p.params.Breaker = route.Breaker
 	p.params.Outbound = route.Outbound
 	p.params.InsecureSkipVerify = definition.InsecureSkipVerify
 	handler := &httputil.ReverseProxy{
