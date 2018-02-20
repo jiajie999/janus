@@ -29,7 +29,7 @@ func setupCircuitBreaker(route *proxy.Route, rawConfig plugin.Config) error {
 		return err
 	}
 
-	route.Breaker = &Breaker{
+	route.Breaker = &proxy.Breaker{
 		Name:                   config.Name,
 		Timeout:                config.Timeout,
 		MaxConcurrentRequests:  config.MaxConcurrentRequests,

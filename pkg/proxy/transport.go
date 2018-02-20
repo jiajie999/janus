@@ -143,17 +143,14 @@ func (s *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 	timing := s.statsClient.BuildTimer().Start()
 
 	roundTripFunc := func() error {
-		// use default RoundTrip function handle the actual request/response
 		resp, err = http.DefaultTransport.RoundTrip(req)
-
-		if err != nil {
-			s.statsClient.SetHTTPRequestSection(statsSectionRoundTrip).
-				TrackRequest(req, timing, false).
-				ResetHTTPRequestSection()
-			return err
-		}
-
-		return nil
+		// TODO when circuit breaker is enabled
+		// we should monitor errors only for a certain type of http response errors
+		// ex IsNetworkError() > 50% error_percent_threshold e.g (httpStatusUnavailable or httpStatusBadGateway)
+		// otherwise even having error as a response we should return nil as error for the breaker
+		// HINT: I am not really sure this function should work for when the breaker is active or not
+		// perhaps better to separate
+		return err
 	}
 
 	if s.breaker != nil {
@@ -163,6 +160,9 @@ func (s *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 	}
 
 	if err != nil {
+		s.statsClient.SetHTTPRequestSection(statsSectionRoundTrip).
+			TrackRequest(req, timing, false).
+			ResetHTTPRequestSection()
 		return nil, err
 	}
 
