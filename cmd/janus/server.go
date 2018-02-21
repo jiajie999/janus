@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 
+	"github.com/afex/hystrix-go/hystrix"
 	"github.com/hellofresh/janus/pkg/api"
 	"github.com/hellofresh/janus/pkg/errors"
 	"github.com/hellofresh/janus/pkg/middleware"
@@ -18,7 +20,6 @@ import (
 	// this is needed to call the init function on each plugin
 	_ "github.com/hellofresh/janus/pkg/plugin/basic"
 	_ "github.com/hellofresh/janus/pkg/plugin/bodylmt"
-	_ "github.com/hellofresh/janus/pkg/plugin/circuitbreaker"
 	_ "github.com/hellofresh/janus/pkg/plugin/compression"
 	_ "github.com/hellofresh/janus/pkg/plugin/cors"
 	_ "github.com/hellofresh/janus/pkg/plugin/oauth2"
@@ -88,6 +89,10 @@ func RunServer(cmd *cobra.Command, args []string) {
 		Config:       globalConfig,
 	}
 	plugin.EmitEvent(plugin.StartupEvent, event)
+
+	hystrixStreamHandler := hystrix.NewStreamHandler()
+	hystrixStreamHandler.Start()
+	go http.ListenAndServe(net.JoinHostPort("", "8002"), hystrixStreamHandler)
 
 	log.Fatal(listenAndServe(r))
 }
