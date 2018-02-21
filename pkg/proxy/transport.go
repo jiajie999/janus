@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -142,24 +143,25 @@ func NewOutChain(out ...OutLink) OutChain {
 func (s *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	timing := s.statsClient.BuildTimer().Start()
 
-	roundTripFunc := func() error {
-		resp, err = http.DefaultTransport.RoundTrip(req)
-		// TODO when circuit breaker is enabled
-		// we should monitor errors only for a certain type of http response errors
-		// ex IsNetworkError() > 50% error_percent_threshold e.g (httpStatusUnavailable or httpStatusBadGateway)
-		// otherwise even having error as a response we should return nil as error for the breaker
-		// HINT: I am not really sure this function should work for when the breaker is active or not
-		// perhaps better to separate
-		return err
-	}
-
 	if s.breaker != nil {
-		err = hystrix.Do(s.breaker.Name, roundTripFunc, nil)
+		err = hystrix.Do(s.breaker.Name, func() error {
+			resp, err = http.DefaultTransport.RoundTrip(req)
+			if err != nil {
+				return err
+			}
+
+			// treat 500 and above as errors for the sake of the circuit breaker
+			if resp.StatusCode >= http.StatusInternalServerError {
+				return fmt.Errorf("internal server error")
+			}
+
+			return nil
+		}, nil)
 	} else {
-		err = roundTripFunc()
+		resp, err = http.DefaultTransport.RoundTrip(req)
 	}
 
-	if err != nil {
+	if err != nil && resp == nil {
 		s.statsClient.SetHTTPRequestSection(statsSectionRoundTrip).
 			TrackRequest(req, timing, false).
 			ResetHTTPRequestSection()
