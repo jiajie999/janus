@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 
-	"github.com/afex/hystrix-go/hystrix"
 	"github.com/hellofresh/janus/pkg/api"
 	"github.com/hellofresh/janus/pkg/errors"
 	"github.com/hellofresh/janus/pkg/middleware"
@@ -89,10 +87,6 @@ func RunServer(cmd *cobra.Command, args []string) {
 		Config:       globalConfig,
 	}
 	plugin.EmitEvent(plugin.StartupEvent, event)
-
-	hystrixStreamHandler := hystrix.NewStreamHandler()
-	hystrixStreamHandler.Start()
-	go http.ListenAndServe(net.JoinHostPort("", "8002"), hystrixStreamHandler)
 
 	log.Fatal(listenAndServe(r))
 }
