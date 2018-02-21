@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"crypto/tls"
-	"fmt"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -11,6 +10,7 @@ import (
 	"github.com/afex/hystrix-go/hystrix"
 	"github.com/hellofresh/janus/pkg/router"
 	stats "github.com/hellofresh/stats-go"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -49,16 +49,12 @@ type Params struct {
 
 	Outbound OutChain
 
-	Breaker *Breaker
+	Breaker Breaker
 }
 
+// Breaker is the circuit breaker identifier configuration
 type Breaker struct {
-	Name                   string
-	Timeout                int
-	MaxConcurrentRequests  int
-	RequestVolumeThreshold int
-	SleepWindow            int
-	ErrorPercentThreshold  int
+	ID string
 }
 
 // OutLink interface for outbound request plugins
@@ -74,12 +70,12 @@ type InChain []router.Constructor
 type Transport struct {
 	statsClient stats.Client
 	outbound    OutChain
-	breaker     *Breaker
+	breaker     Breaker
 }
 
 // NewTransport creates a new instance of Transport
-func NewTransport(statsClient stats.Client, outbound OutChain) *Transport {
-	return &Transport{statsClient: statsClient, outbound: outbound}
+func NewTransport(statsClient stats.Client, outbound OutChain, breaker Breaker) *Transport {
+	return &Transport{statsClient: statsClient, outbound: outbound, breaker: breaker}
 }
 
 // NewTransportWithParams creates a new instance of Transport with the given params
@@ -113,18 +109,7 @@ func NewTransportWithParams(o Params) *Transport {
 		}()
 	}
 
-	t := NewTransport(o.StatsClient, o.Outbound)
-
-	if o.Breaker != nil {
-		hystrix.ConfigureCommand(o.Breaker.Name, hystrix.CommandConfig{
-			Timeout:                o.Breaker.Timeout,
-			MaxConcurrentRequests:  o.Breaker.MaxConcurrentRequests,
-			ErrorPercentThreshold:  o.Breaker.ErrorPercentThreshold,
-			RequestVolumeThreshold: o.Breaker.RequestVolumeThreshold,
-			SleepWindow:            o.Breaker.SleepWindow,
-		})
-		t.breaker = o.Breaker
-	}
+	t := NewTransport(o.StatsClient, o.Outbound, o.Breaker)
 
 	return t
 }
@@ -143,23 +128,19 @@ func NewOutChain(out ...OutLink) OutChain {
 func (s *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
 	timing := s.statsClient.BuildTimer().Start()
 
-	if s.breaker != nil {
-		err = hystrix.Do(s.breaker.Name, func() error {
-			resp, err = http.DefaultTransport.RoundTrip(req)
-			if err != nil {
-				return err
-			}
-
-			// treat 500 and above as errors for the sake of the circuit breaker
-			if resp.StatusCode >= http.StatusInternalServerError {
-				return fmt.Errorf("internal server error")
-			}
-
-			return nil
-		}, nil)
-	} else {
+	err = hystrix.Do(s.breaker.ID, func() error {
 		resp, err = http.DefaultTransport.RoundTrip(req)
-	}
+		if err != nil {
+			return err
+		}
+
+		// treat 500 and above as errors for the sake of the circuit breaker
+		if resp.StatusCode >= http.StatusInternalServerError {
+			return errors.New("internal server error")
+		}
+
+		return nil
+	}, nil)
 
 	if err != nil && resp == nil {
 		s.statsClient.SetHTTPRequestSection(statsSectionRoundTrip).

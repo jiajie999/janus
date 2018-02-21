@@ -60,7 +60,6 @@ type Route struct {
 	Proxy    *Definition
 	Inbound  InChain
 	Outbound OutChain
-	Breaker  *Breaker
 }
 
 type routeJSONProxy struct {
